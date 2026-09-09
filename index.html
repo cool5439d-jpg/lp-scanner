@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LP 选池扫描器</title>
+<style>
+:root {
+  --bg: #0f1115; --card: #171a21; --line: #262b36; --fg: #e6e9ef;
+  --dim: #8b93a3; --accent: #4a9eff; --good: #35c07f; --warn: #e0a63a; --bad: #e05d5d;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 60px; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+.sub { color: var(--dim); font-size: 13px; margin-bottom: 20px; }
+
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+.card h2 { font-size: 15px; margin: 0 0 14px; font-weight: 600; }
+
+.row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field label { font-size: 12px; color: var(--dim); }
+.field input { background: #0d0f14; border: 1px solid var(--line); color: var(--fg);
+  border-radius: 6px; padding: 8px 10px; font-size: 14px; width: 140px; font-family: inherit; }
+.field input:focus { outline: none; border-color: var(--accent); }
+.hint { font-size: 12px; color: var(--dim); margin-top: 6px; }
+
+button { background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+  padding: 9px 18px; font-size: 14px; cursor: pointer; font-family: inherit; }
+button:disabled { background: #2c3444; color: var(--dim); cursor: not-allowed; }
+button.ghost { background: transparent; border: 1px solid var(--line); color: var(--fg); }
+
+.log { background: #0a0c10; border: 1px solid var(--line); border-radius: 6px;
+  padding: 12px; font-family: Consolas, monospace; font-size: 12px; color: var(--dim);
+  max-height: 190px; overflow-y: auto; white-space: pre-wrap; }
+.log .now { color: var(--accent); }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--dim); font-weight: 500; font-size: 12px; }
+th:first-child, td:first-child { text-align: left; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: #1d222c; }
+.pos { color: var(--good); } .neg { color: var(--bad); } .mid { color: var(--warn); }
+.tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px; margin-left: 6px; }
+.tag.ok { background: rgba(53,192,127,.15); color: var(--good); }
+.tag.no { background: rgba(224,93,93,.15); color: var(--bad); }
+
+.plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 14px; }
+.plan { border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: #12151b; }
+.plan.best { border-color: var(--accent); }
+.plan h3 { margin: 0 0 10px; font-size: 14px; }
+.plan .kv { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+.plan .kv span:first-child { color: var(--dim); }
+.plan .big { font-size: 18px; font-weight: 600; color: var(--good); }
+
+.shared { margin-top: 14px; padding: 12px; background: #12151b; border-radius: 8px; border: 1px solid var(--line); }
+.shared .kv { display: inline-block; margin-right: 18px; font-size: 13px; }
+.shared .kv span { color: var(--dim); }
+.addr { font-family: Consolas, monospace; font-size: 12px; color: var(--dim); cursor: pointer; }
+.addr:hover { color: var(--accent); }
+.alert { background: rgba(224,166,58,.1); border-left: 3px solid var(--warn);
+  padding: 10px 12px; border-radius: 4px; margin-top: 12px; font-size: 13px; }
+.empty { color: var(--dim); text-align: center; padding: 30px; }
+.advice { margin-top: 14px; padding: 14px; background: #12151b; border-radius: 8px;
+  border: 1px solid var(--line); font-size: 13px; line-height: 1.7; }
+.advice ul { color: var(--dim); }
+.advice li { margin-bottom: 4px; }
+.verdict { display: inline-block; padding: 3px 12px; border-radius: 5px; font-weight: 600; font-size: 13px; }
+.verdict.good { background: rgba(53,192,127,.16); color: var(--good); }
+.verdict.accent { background: rgba(74,158,255,.16); color: var(--accent); }
+.verdict.warn { background: rgba(224,166,58,.16); color: var(--warn); }
+.verdict.bad { background: rgba(224,93,93,.16); color: var(--bad); }
+.decision { margin: 14px 0; padding: 16px; background: #0d1016; border-radius: 8px; border: 1px solid var(--line); }
+.dhead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.dverdict { font-size: 20px; font-weight: 700; padding: 4px 18px; border-radius: 6px; }
+.dverdict.good { background: rgba(53,192,127,.18); color: var(--good); }
+.dverdict.warn { background: rgba(224,166,58,.18); color: var(--warn); }
+.dverdict.bad { background: rgba(224,93,93,.18); color: var(--bad); }
+.dscore { font-size: 15px; color: var(--dim); font-family: Consolas, monospace; }
+.dreason { font-size: 13px; flex: 1; min-width: 220px; }
+.daction { margin-top: 10px; padding: 9px 12px; background: rgba(74,158,255,.1);
+  border-left: 3px solid var(--accent); border-radius: 4px; font-size: 13px; }
+.dtable { margin-top: 12px; font-size: 12.5px; }
+.dtable td { border-bottom: 1px solid #1b1f28; padding: 6px 8px; }
+.detail { display: none; }
+.detail.open { display: table-row; }
+.detail td { background: #12151b; padding: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>LP 选池扫描器</h1>
+  <div class="sub">扫描 Robinhood 链全部池子，筛出适合做 LP 的，给出三档表单填法。只看 Uniswap v4 + USDG，那是 rh-uni 唯一能建仓的组合。</div>
+
+  <div class="card">
+    <h2>扫描设置</h2>
+    <div class="row">
+      <div class="field">
+        <label>预算（USDG）</label>
+        <input id="budget" type="number" value="500">
+      </div>
+      <div class="field">
+        <label>钱包可用（USDG）</label>
+        <input id="available" type="number" value="8700">
+      </div>
+      <div class="field">
+        <label>终审前 N 个池</label>
+        <input id="verify" type="number" value="3">
+      </div>
+      <button id="go">开始扫描</button>
+      <button id="hist" class="ghost">历史稳定性</button>
+    </div>
+    <div class="hint">终审会调用 rh-uni 自己的演练，每个池约 15 秒，能识破账面好看但换币走不通的池。填 0 跳过。</div>
+  </div>
+
+  <div class="card" id="logCard" style="display:none">
+    <h2>进度</h2>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div id="out"></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

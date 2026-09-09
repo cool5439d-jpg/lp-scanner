@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+
+# 扫描历史与报告：记录了你在看哪些币，属于个人数据，不提交
+history.jsonl
+report.txt
+
+# 万一有人在这里放配置
+.env
+*.bak
