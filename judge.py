@@ -2,7 +2,9 @@
 # 设计原则：不做黑箱打分，每个池子都给出能看懂的淘汰理由或推荐理由
 
 import config
+import flow
 import fundamentals
+import phase
 import safety
 import timing
 
@@ -88,6 +90,15 @@ def rank(rows):
             r["fun"] = fun
             r["fun_level"] = flvl
             r["fun_note"] = fnote
+            fl, fnote, _ = flow.grade(r)
+            r["flow_level"] = fl
+            r["flow_note"] = fnote
+            ph, pnote, play = phase.detect(r)
+            r["phase"] = ph
+            r["phase_note"] = pnote
+            r["phase_play"] = play
+            r["layout"] = phase.LAYOUT[ph]
+            r["exit_signals"] = phase.exit_signals(r)
             r["band"] = volatility_band(r)
             r["suggest_range"] = suggest_range(r)
             r["timing"], r["timing_note"] = timing.grade(r)

@@ -8,7 +8,9 @@
 import advice
 import config
 import decide
+import flow
 import fundamentals
+import phase
 import safety
 import timing
 
@@ -39,7 +41,10 @@ def build(r, style, available, cap):
     sf = safety.SIZE_FACTOR.get(r.get("sec_level", "未知"), 0.5)
     # 基本面差也压：新币、筹码集中都该少投
     ff = fundamentals.SIZE_FACTOR.get(r.get("fun_level", "未知"), 0.7)
-    caps = [available * SIZE_RATIO[style] * tf * sf * ff, r["tvl"] * SHARE_CAP[style]]
+    # 资金流枯竭和崩盘期直接压到极小甚至归零：钱不流了，待在池子里只剩风险
+    lf = flow.SIZE_FACTOR.get(r.get("flow_level", "未知"), 0.8)
+    pf = phase.SIZE_FACTOR.get(r.get("phase", "不明"), 0.5)
+    caps = [available * SIZE_RATIO[style] * tf * sf * ff * lf * pf, r["tvl"] * SHARE_CAP[style]]
     if cap:
         caps.append(cap)
     size = int(min(caps))
@@ -54,6 +59,10 @@ def build(r, style, available, cap):
     scale = (base_pct / pct) ** 0.5
     income = pool_daily_fee * share * scale
 
+    ph = r.get("phase", "不明")
+    lay = r.get("layout") or phase.LAYOUT["不明"]
+    lo_pct, hi_pct = phase.range_for(ph, pct)
+
     return {
         "style": style,
         "token": r["token"],
@@ -63,8 +72,10 @@ def build(r, style, available, cap):
         "spacing": "",           # 留空，复用已有池时以链上为准
         "max_deviation": "10",
         "range_mode": "相对现价（百分比）",
-        "range": f"-{pct}%,{pct}%",
-        "shape": "spot",
+        "range": f"{lo_pct}%,{hi_pct}%",
+        "shape": lay["shape"],
+        "layers": lay["layers"],
+        "shape_why": lay["why"],
         "swap_slippage": "5",
         "lp_slippage": "5",
         "watch": "勾上",
@@ -90,6 +101,13 @@ def render(r, plans, cap_note="", sibs=None):
     lines.append(f"  时点 {r.get('timing','?')}：{r.get('timing_note','')}")
     lines.append(f"  合约 {r.get('sec_level','?')}：{r.get('sec_note','')}")
     lines.append(f"  基本面 {r.get('fun_level','?')}：{r.get('fun_note','')}")
+    lines.append(f"  资金流 {r.get('flow_level','?')}：{r.get('flow_note','')}")
+    lines.append(f"  阶段 {r.get('phase','?')}：{r.get('phase_note','')} → {r.get('phase_play','')}")
+    sigs = r.get("exit_signals") or []
+    if sigs:
+        lines.append(f"  ⚠ 撤退信号 {len(sigs)} 个（中两个减仓，中三个清仓）：")
+        for x in sigs:
+            lines.append(f"      · {x}")
     lines.append(f"  代币地址 {r['token']}")
     if cap_note:
         lines.append(f"  {cap_note}")

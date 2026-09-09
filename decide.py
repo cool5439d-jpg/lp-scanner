@@ -10,6 +10,7 @@
 # "币价波动大于手续费"对几乎所有迷因币都成立，它是背景不是判据，
 # 把它和"这个池特有的问题"混在一起，就是模棱两可的根源。
 
+import flow
 import fundamentals
 import safety
 import timing
@@ -89,6 +90,19 @@ def score_fundamentals(r):
     return 2, "绿", note
 
 
+def score_flow(r):
+    lvl = r.get("flow_level", "未知")
+    note = r.get("flow_note", "")
+    # 资金枯竭一票否决：钱不流了，手续费就没了，留在池子里只剩价格风险
+    if lvl == "枯竭":
+        return 0, "红", note
+    if lvl == "退潮":
+        return 1, "黄", note
+    if lvl == "未知":
+        return 1, "黄", note
+    return 2, "绿", note
+
+
 DIMS = [
     ("赚钱能力", score_earning),
     ("进出安全", score_exit),
@@ -96,6 +110,7 @@ DIMS = [
     ("进场时点", score_timing),
     ("收益稳定", score_stability),
     ("代币基本面", score_fundamentals),
+    ("资金流", score_flow),
 ]
 
 
@@ -110,22 +125,29 @@ def build(r, budget, plans_list):
         if state == "红":
             reds.append((name, msg))
 
+    # 崩盘期直接否决，不看分数
+    if r.get("phase") == "崩盘":
+        return {"verdict": "不投", "score": total,
+                "reason": f"处于崩盘期：{r.get('phase_note','')}",
+                "action": "不建议现在进。成交萎缩时收不到手续费，而单边下跌会把你的 USDG 持续换成这个币，跌多少你就承担多少。等企稳再看。",
+                "rows": rows, "reds": [f"{n}：{m}" for n, m in reds]}
+
     # 红灯一票否决，无论总分多高
     if reds:
         name, msg = reds[0]
         verdict = "不投"
         reason = f"{name}不过关：{msg}"
         action = "换一个池，或等这个问题消失再看。"
-    elif total >= 10:
+    elif total >= 12:
         verdict = "投"
         best = plans_list[1]
-        reason = f"六项全过，总分 {total}/12，没有拖后腿的短板。"
+        reason = f"六项全过，总分 {total}/14，没有拖后腿的短板。"
         action = f"按最佳档投 {best['budget']} USDG，区间 {best['range']}，勾上监控。"
     else:
         verdict = "小仓试"
         weak = min(rows, key=lambda x: x["points"])
         cons = plans_list[0]
-        reason = f"总分 {total}/12，短板在{weak['name']}：{weak['msg']}"
+        reason = f"总分 {total}/14，短板在{weak['name']}：{weak['msg']}"
         action = f"只按保守档投 {cons['budget']} USDG，区间 {cons['range']}，观察一天再决定加不加。"
 
     return {
@@ -146,7 +168,7 @@ COMMON = [
 
 
 def render(d):
-    lines = [f"  ┌─ 结论：{d['verdict']}   评分 {d['score']}/12"]
+    lines = [f"  ┌─ 结论：{d['verdict']}   评分 {d['score']}/14"]
     lines.append(f"  │  {d['reason']}")
     lines.append(f"  │  怎么做：{d['action']}")
     lines.append("  ├─ 逐项体检")

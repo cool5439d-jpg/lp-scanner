@@ -87,6 +87,7 @@ def extract(raw_pools, budget):
         token = quote if base == usdg else base
 
         tvl = _f(a.get("reserve_in_usd"))
+        m5 = _f(vol.get("m5"))
         h1 = _f(vol.get("h1"))
         h6 = _f(vol.get("h6"))
         h24 = _f(vol.get("h24"))
@@ -108,12 +109,14 @@ def extract(raw_pools, budget):
             "pool_addr": (a.get("address") or "").lower(),
             "fee_pct": fee * 100,
             "tvl": tvl,
+            "vol_5m": m5,
             "vol_1h": h1,
             "vol_6h": h6,
             "vol_24h": h24,
             "trades_24h": trades,
             "turnover": turnover,
             "durability": durability,
+            "chg_5m": _f(chg.get("m5")),
             "chg_1h": _f(chg.get("h1")),
             "chg_6h": _f(chg.get("h6")),
             "chg_24h": _f(chg.get("h24")),

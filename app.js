@@ -63,6 +63,7 @@ const poolBlock = (v) => {
     <div class="hint">${r.band} · 日换手 ${r.turnover.toFixed(1)} 倍 · 24h <span class="${cls(r.chg_24h)}">${pct(r.chg_24h)}</span>
       · 流动性 ${money(r.tvl)} · 笔数 ${r.trades_24h}</div>
     <div class="hint">合约 ${r.sec_level || '?'}：${r.sec_note || ''}</div>
+    ${phaseBlock(r)}
     <div class="hint">代币地址 <span class="addr" onclick="copy('${r.token}')">${r.token}（点击复制）</span></div>
     ${decisionBlock(v.decision)}
     <div class="plans">${ps.map((p, i) => planCard(p, i === 1)).join('')}</div>
@@ -72,7 +73,7 @@ const poolBlock = (v) => {
       <div class="kv"><span>tick 间距</span> 留空</div>
       <div class="kv"><span>最大偏离</span> 10</div>
       <div class="kv"><span>区间写法</span> 相对现价</div>
-      <div class="kv"><span>形状</span> spot</div>
+      <div class="kv"><span>形状</span> ${mid.shape}${mid.layers > 1 ? ' × ' + mid.layers + ' 层' : ''}</div>
       <div class="kv"><span>换币滑点</span> 5</div>
       <div class="kv"><span>LP 余量</span> 5</div>
       <div class="kv"><span>继续监控</span> 勾上</div>
@@ -81,6 +82,24 @@ const poolBlock = (v) => {
       ${mid.budget} USDG 计，本金一天可能变动 ${money(swing)}，通常远大于手续费收入。</div>
     ${sibBlock(v.siblings)}
     ${adviceBlock(v.advice)}
+  </div>`
+}
+
+const PH = { '拉升': 'warn', '横盘': 'good', '反弹': 'warn', '见顶': 'bad', '崩盘': 'bad', '不明': 'dim' }
+const FL = { '涌入': 'good', '正常': 'good', '退潮': 'warn', '枯竭': 'bad', '未知': 'dim' }
+
+const phaseBlock = (r) => {
+  if (!r.phase) return ''
+  const sigs = r.exit_signals || []
+  const sg = sigs.length
+    ? `<div class="alert" style="margin-top:8px">撤退信号 ${sigs.length} 个（中两个减仓，中三个清仓）
+       <ul style="margin:6px 0 0;padding-left:20px">${sigs.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : ''
+  return `<div class="phase">
+    <span class="ptag ${PH[r.phase] || 'dim'}">${r.phase}期</span>
+    <span class="ptag ${FL[r.flow_level] || 'dim'}">资金${r.flow_level}</span>
+    <span style="font-size:13px">${r.phase_note}　→　<b>${r.phase_play}</b></span>
+    <div class="hint" style="margin-top:6px">${r.flow_note}</div>
+    ${sg}
   </div>`
 }
 
