@@ -7,16 +7,23 @@
 ## 用法
 
 ```bash
-cd d:/策略数据最近版/lp_scanner
-export https_proxy=http://127.0.0.1:7897
+cd <本仓库目录>
 
-python scan.py                                      # 只扫描排名
-python scan.py --verify 3 --available 8700          # 扫描 + 终审 + 三档填法
-python scan.py --watch --verify 3                   # 观察模式
-python scan.py --show-rejected                      # 看被淘汰的池和原因
+python scan.py                                  # 只扫描排名
+python scan.py --verify 3 --available 5000      # 扫描 + 终审 + 三档填法
+python scan.py --watch --verify 3               # 观察模式
+python scan.py --show-rejected                  # 看被淘汰的池和原因
 ```
 
 `--available` 填你钱包里的可用 USDG，三档仓位据此计算。`--verify N` 对排名前 N 个池跑真实演练，每个约 15 秒。
+
+数据源是 GeckoTerminal 和 GoPlus。所在网络直连不了的话，先设代理再运行：
+
+```bash
+export https_proxy=http://<你的代理地址>:<端口>
+```
+
+`--verify` 需要能调用到 rh-uni，路径在 `verify.py` 的 `TOOL_DIR`，默认是本仓库同级的 `robinhood-chain-LP`。
 
 ## 三档方案怎么分
 
