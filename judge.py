@@ -3,6 +3,7 @@
 
 import config
 import flow
+import fomo_flow
 import fundamentals
 import phase
 import safety
@@ -68,6 +69,8 @@ def suggest_range(r):
 # 对通过淘汰的池子排名。收益是主轴，但用稳定性做修正
 # 不把两者揉成一个不可解释的分数，而是先按收益排，再标注稳定性供人工判断
 def rank(rows):
+    # 先把聪明钱读数挂上，后面 flow / phase 的判级都会用到；8090 没开就是零读数
+    fomo_flow.attach(rows)
     passed, rejected = [], []
     for r in rows:
         bad = disqualify(r)
@@ -99,6 +102,7 @@ def rank(rows):
             r["phase_play"] = play
             r["layout"] = phase.LAYOUT[ph]
             r["exit_signals"] = phase.exit_signals(r)
+            r["fomo_label"] = fomo_flow.label(r)
             r["band"] = volatility_band(r)
             r["suggest_range"] = suggest_range(r)
             r["timing"], r["timing_note"] = timing.grade(r)

@@ -16,6 +16,7 @@ import urllib.request
 import config
 import fetch
 import flow
+import fomo_flow
 import notify
 import phase
 import timing
@@ -144,6 +145,7 @@ def sample(e, pos_list):
     r = next((x for x in rows if x["pool_addr"] == e["pool"]), None) if e["pool"] else None
     if r is None:
         r = max(rows, key=lambda x: x["tvl"])
+    fomo_flow.attach([r])
     fl, fnote, _ = flow.grade(r)
     ph, pnote, play = phase.detect(r)
     r["flow_level"], r["flow_note"], r["phase"], r["phase_note"], r["phase_play"] = fl, fnote, ph, pnote, play
@@ -158,6 +160,7 @@ def sample(e, pos_list):
         "flow": fl, "flow_ratio": round(ratio, 2) if ratio is not None else None, "flow_note": fnote,
         "phase": ph, "phase_note": pnote, "phase_play": play, "timing": tm, "timing_note": tnote,
         "signals": sigs, "pool_name": r["name"], "pool_addr": r["pool_addr"], "fee_pct": r["fee_pct"],
+        "fomo": r["fomo"], "fomo_label": fomo_flow.label(r),
         "positions": [_pos(p) for p in pos_list],
     }, r
 

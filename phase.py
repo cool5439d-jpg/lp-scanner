@@ -12,6 +12,7 @@
 #   光看资金流会把"横盘但成交活跃"误判成拉升
 
 import flow
+import fomo_flow
 
 
 # 5 分钟涨幅超过这个数，说明当下正在回升，不该再算作"还在崩"
@@ -91,7 +92,8 @@ def range_for(ph, base_pct):
 def exit_signals(r):
     sig = []
     fg, fnote, _ = flow.grade(r)
-    if fg in ("退潮", "枯竭"):
+    # 退潮若是聪明钱卖出压下来的，成交量本身可能还稳，"成交萎缩"这条就不对；下面"聪明钱离场"会单独报
+    if fg in ("退潮", "枯竭") and fomo_flow.adjust(r) >= 0:
         sig.append(f"成交萎缩：{fnote}")
     if r["chg_1h"] <= -5:
         sig.append(f"价格急跌：1 小时 {r['chg_1h']:+.1f}%")
@@ -99,4 +101,8 @@ def exit_signals(r):
         sig.append(f"中期破位：6 小时 {r['chg_6h']:+.1f}%")
     if r["trades_24h"] < 2000:
         sig.append(f"交易稀疏：日笔数仅 {r['trades_24h']}")
+    # 榜单交易员在卖：你已经在池里时最该怕的一条
+    smart_exit = fomo_flow.exit_signal(r)
+    if smart_exit:
+        sig.append(smart_exit)
     return sig

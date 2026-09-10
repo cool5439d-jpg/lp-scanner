@@ -94,6 +94,13 @@ const poolBlock = (v) => {
 const PH = { '拉升': 'warn', '横盘': 'good', '反弹': 'warn', '见顶': 'bad', '崩盘': 'bad', '不明': 'dim' }
 const FL = { '涌入': 'good', '正常': 'good', '退潮': 'warn', '枯竭': 'bad', '未知': 'dim' }
 
+// 聪明钱标签：15 分钟有 2 人以上买入标绿，1 小时有 2 人以上卖出标红
+const fomoTag = (f, text) => {
+  if (!f || !f.ok || !text) return ''
+  const c = f.smart_out_60 >= 2 ? 'bad' : f.smart_in_15 >= 2 && !f.smart_out_15 ? 'good' : 'dim'
+  return `<span class="ptag ${c}" title="来自 8090 fomo_alpha 的榜单交易员买卖人数">${text}</span>`
+}
+
 const phaseBlock = (r) => {
   if (!r.phase) return ''
   const sigs = r.exit_signals || []
@@ -102,7 +109,7 @@ const phaseBlock = (r) => {
        <ul style="margin:6px 0 0;padding-left:20px">${sigs.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : ''
   return `<div class="phase">
     <span class="ptag ${PH[r.phase] || 'dim'}">${r.phase}期</span>
-    <span class="ptag ${FL[r.flow_level] || 'dim'}">资金${r.flow_level}</span>
+    <span class="ptag ${FL[r.flow_level] || 'dim'}">资金${r.flow_level}</span>${fomoTag(r.fomo, r.fomo_label)}
     <span style="font-size:13px">${r.phase_note}　→　<b>${r.phase_play}</b></span>
     <div class="hint" style="margin-top:6px">${r.flow_note}</div>
     ${sg}
@@ -164,7 +171,7 @@ const adviceBlock = (a) => {
 
 const rankTable = (rows) => {
   const tr = rows.slice(0, 14).map((r) => `<tr>
-    <td>${r.name} ${links(r.token, r.pool_addr)}</td>
+    <td>${r.name} ${links(r.token, r.pool_addr)}${r.fomo && r.fomo.ok && (r.fomo.smart_in_15 || r.fomo.smart_out_60) ? fomoTag(r.fomo, `聪明钱 ${r.fomo.smart_in_15} 进 ${r.fomo.smart_out_60} 出`) : ''}</td>
     <td>${money(r.tvl)}</td>
     <td>${r.turnover.toFixed(1)}</td>
     <td>${r.trades_24h}</td>
@@ -249,7 +256,7 @@ const lookupTable = (pools) => {
     <td>${money(r.tvl)}</td><td>${r.turnover.toFixed(1)}</td><td>${r.trades_24h}</td>
     <td class="${cls(r.chg_24h)}">${pct(r.chg_24h)}</td><td>${r.durability.toFixed(0)}%</td>
     <td>$${r.daily_income.toFixed(2)}</td>
-    <td style="text-align:left;color:var(--dim);white-space:normal">${r.status === '通过' ? `${r.phase || ''}期 · 资金${r.flow_level || ''}` : (r.reasons || []).join('；')}</td></tr>`).join('')
+    <td style="text-align:left;color:var(--dim);white-space:normal">${r.status === '通过' ? `${r.phase || ''}期 · 资金${r.flow_level || ''} ${fomoTag(r.fomo, r.fomo_label)}` : (r.reasons || []).join('；')}</td></tr>`).join('')
   return `<table style="margin-top:12px"><thead><tr><th>池子</th><th>流动性</th><th>日换手</th><th>笔数</th><th>24h</th><th>持久度</th><th>日入</th><th style="text-align:left">结论</th></tr></thead><tbody>${tr}</tbody></table>`
 }
 
@@ -366,7 +373,7 @@ const monCard = (e, i) => {
       <span class="hint" style="margin:0">${age} 分前</span>${links(e.token, s.pool_addr)}<span class="x" title="移出监测" onclick="monRemove('${e.token}')">✕</span></div>
     <div class="mline"><span>1h <b class="${cls(s.chg_1h)}">${pct(s.chg_1h)}</b></span><span>6h <b class="${cls(s.chg_6h)}">${pct(s.chg_6h)}</b></span><span>24h <b class="${cls(s.chg_24h)}">${pct(s.chg_24h)}</b></span>
       <span>换手 <b>${s.turnover.toFixed(1)}</b></span><span>流动性 <b>${money(s.tvl)}</b></span><span>5m 成交 <b>${money(s.vol_5m)}</b></span></div>
-    <div style="margin-top:6px"><span class="ptag ${PH[s.phase] || 'dim'}">${s.phase}期</span><span class="ptag ${FLOWC[s.flow] || 'dim'}">资金${s.flow}${s.flow_ratio != null ? ' ' + s.flow_ratio + '×' : ''}</span><span style="font-size:12.5px;color:var(--dim)">${s.phase_play}</span></div>
+    <div style="margin-top:6px"><span class="ptag ${PH[s.phase] || 'dim'}">${s.phase}期</span><span class="ptag ${FLOWC[s.flow] || 'dim'}">资金${s.flow}${s.flow_ratio != null ? ' ' + s.flow_ratio + '×' : ''}</span>${fomoTag(s.fomo, s.fomo_label)}<span style="font-size:12.5px;color:var(--dim)">${s.phase_play}</span></div>
     <canvas class="spark" id="sp${i}"></canvas>
     <div class="hint" style="margin:0">${s.pool_name} · ${e.series.length} 个样本</div>
     ${s.positions.map(rangeBar).join('')}
