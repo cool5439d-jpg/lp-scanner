@@ -5,9 +5,10 @@ __pycache__/
 history.jsonl
 report.txt
 
-# 监控运行时数据：提示记录和去重状态，同样是个人数据
+# 监控运行时数据：提示记录、去重状态、开关状态，同样是个人数据
 alerts.log
 notified.json
+watch_state.json
 
 # 万一有人在这里放配置
 .env

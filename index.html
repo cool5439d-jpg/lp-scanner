@@ -90,6 +90,9 @@ tr.clickable:hover td { background: #1d222c; }
 .ptag.warn { background: rgba(224,166,58,.16); color: var(--warn); }
 .ptag.bad { background: rgba(224,93,93,.16); color: var(--bad); }
 .ptag.dim { background: #22262f; color: var(--dim); }
+.wdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.wdot.on { background: var(--good); box-shadow: 0 0 6px var(--good); }
+.wdot.off { background: #4a5160; }
 .detail { display: none; }
 .detail.open { display: table-row; }
 .detail td { background: #12151b; padding: 16px; }
@@ -119,6 +122,22 @@ tr.clickable:hover td { background: #1d222c; }
       <button id="hist" class="ghost">历史稳定性</button>
     </div>
     <div class="hint">终审会调用 rh-uni 自己的演练，每个池约 15 秒，能识破账面好看但换币走不通的池。填 0 跳过。</div>
+  </div>
+
+  <div class="card">
+    <h2>定时监控</h2>
+    <div class="row">
+      <button id="wtoggle">开启监控</button>
+      <div class="field">
+        <label>间隔（分钟）</label>
+        <input id="winterval" type="number" value="15" style="width:100px">
+      </div>
+      <span id="wstate" class="hint" style="margin:0"></span>
+      <span style="flex:1"></span>
+      <button id="walerts" class="ghost">提示记录</button>
+      <button id="wtest" class="ghost">测试通知</button>
+    </div>
+    <div class="hint">开启后每隔一段时间自动扫描，发现达标机会或持仓预警就弹窗加提示音。关掉浏览器不影响，服务在跑就一直监控。</div>
   </div>
 
   <div class="card" id="logCard" style="display:none">

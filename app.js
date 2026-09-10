@@ -193,6 +193,43 @@ const render = (d) => {
   $('out').innerHTML = html
 }
 
+// ---- 定时监控开关 ----
+const fmtTime = (ts) => ts ? new Date(ts * 1000).toLocaleTimeString('zh-CN', { hour12: false }) : '—'
+
+const renderWatch = (w) => {
+  const dot = `<span class="wdot ${w.on ? 'on' : 'off'}"></span>`
+  $('wtoggle').textContent = w.on ? '停止监控' : '开启监控'
+  $('wtoggle').className = w.on ? 'ghost' : ''
+  $('wstate').innerHTML = w.on
+    ? `${dot}运行中 · 循环 ${w.loops} 个 · 已跑 ${w.rounds} 轮 · 发出 ${w.alerts} 条提示 · 上次 ${fmtTime(w.lastRun)} · 下次 ${fmtTime(w.nextRun)}<br>${w.note}`
+    : `${dot}已停止${w.rounds ? ` · 本次会话跑过 ${w.rounds} 轮，发出 ${w.alerts} 条提示` : ''}`
+}
+
+const pollWatch = async () => renderWatch(await (await fetch('/api/watch')).json())
+
+$('wtoggle').onclick = async () => {
+  const w = await (await fetch('/api/watch')).json()
+  const on = w.on ? 0 : 1
+  const iv = Math.max(60, Number($('winterval').value || 15) * 60)
+  const b = $('budget').value, a = $('available').value
+  renderWatch(await (await fetch(`/api/watch?on=${on}&interval=${iv}&budget=${b}&available=${a}`)).json())
+}
+
+$('wtest').onclick = async () => {
+  await fetch('/api/watch?on=test')
+  alert('测试通知已发送，看右下角')
+}
+
+$('walerts').onclick = async () => {
+  const d = await (await fetch('/api/alerts')).json()
+  if (!d.lines.length) return alert('还没有任何提示记录')
+  $('out').innerHTML = `<div class="card"><h2>提示记录（最近 ${d.lines.length} 条）</h2>
+    <div class="log" style="max-height:400px">${d.lines.join('\n')}</div></div>`
+}
+
+pollWatch()
+setInterval(pollWatch, 20000)
+
 window.copy = (t) => navigator.clipboard.writeText(t)
 
 // 打开页面时若已有上次结果就直接显示

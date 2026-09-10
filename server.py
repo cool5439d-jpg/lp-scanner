@@ -17,6 +17,7 @@ import decide
 import fetch
 import history
 import judge
+import notify
 import plans
 import siblings
 import verify
@@ -34,6 +35,122 @@ state = {
     "finished": 0,
 }
 lock = threading.Lock()
+
+# 定时监控。做成服务里的后台线程而不是独立进程，这样网页上一个开关就能控制，
+# 不用记命令行，也不会因为关掉终端窗口而悄悄停掉。
+WATCH_STATE = os.path.join(HERE, "watch_state.json")
+
+watch = {
+    "on": False,
+    "interval": 15 * 60,
+    "budget": config.DEFAULT_BUDGET,
+    "available": config.DEFAULT_BUDGET,
+    "verify_top": 3,
+    "last_run": 0,
+    "next_run": 0,
+    "rounds": 0,
+    "alerts": 0,
+    "last_note": "未启动",
+}
+# 每次启动都换一个新的停止事件，线程只认自己拿到的那个。
+# 如果停止和启动共用一个事件，用户快速点"停止→开启"时，老线程还没从 wait() 醒来
+# 事件就已被 clear()，它永远收不到停止信号，结果是两个循环同时跑、轮数翻倍、提示重复。
+_watch_stop = threading.Event()
+
+
+# 开关状态落盘。服务重启后自动恢复上次的开/关，免得再出现"以为在跑其实没开"
+def _save_watch_state():
+    try:
+        with open(WATCH_STATE, "w", encoding="utf-8") as f:
+            json.dump({k: watch[k] for k in ("on", "interval", "budget", "available", "verify_top")}, f)
+    except OSError:
+        pass
+
+
+def _load_watch_state():
+    try:
+        with open(WATCH_STATE, encoding="utf-8") as f:
+            d = json.load(f)
+        for k in ("on", "interval", "budget", "available", "verify_top"):
+            if k in d:
+                watch[k] = d[k]
+    except (OSError, json.JSONDecodeError):
+        pass
+
+
+def _start_watch():
+    global _watch_stop
+    _watch_stop = threading.Event()
+    watch["on"] = True
+    watch["last_note"] = "已启动，正在跑第一轮"
+    # 线程按代数命名，状态接口据此数出活着的循环数。OS 线程数分不清监控循环和
+    # 子进程管道读取线程，只有这个计数能直接回答"有没有漏掉没停的循环"
+    watch["gen"] = watch.get("gen", 0) + 1
+    threading.Thread(target=_watch_loop, args=(_watch_stop,), daemon=True,
+                     name=f"watch-{watch['gen']}").start()
+    _save_watch_state()
+
+
+def _stop_watch():
+    watch["on"] = False
+    _watch_stop.set()
+    watch["last_note"] = "已停止"
+    _save_watch_state()
+
+
+def _watch_loop(stop):
+    while not stop.is_set():
+        try:
+            watch["last_run"] = int(time.time())
+            watch["rounds"] += 1
+            raw = fetch.fetch_all_pools()
+            # 被替换的循环在各阶段之间就退出，不把整轮跑完。否则快速"停→开"会让
+            # 新旧两轮并发：接口请求翻倍触发 429，演练子进程也成倍堆积
+            if stop.is_set():
+                return
+            rows = fetch.extract(raw, watch["budget"])
+            passed, rejected = judge.rank(rows)
+            history.append_snapshot(passed, watch["budget"])
+            passed = history.merge(passed, history.stability(history.load_history()))
+
+            n_alert = 0
+            # 持仓预警优先：钱已经在里面了，比找新机会重要
+            # 按池子匹配而不是按代币：你持有的是 AI 的 0.23% 池，
+            # 不该因为同代币的 1% 池出了撤退信号就被吵醒
+            held = notify.held_pools()
+            if held:
+                mine = [r for r in passed + rejected if r["pool_addr"].lower() in held]
+                n_alert += len(notify.warnings(mine))
+
+            verified = []
+            for r in passed[:watch["verify_top"]]:
+                if stop.is_set():
+                    return
+                ok, _, _ = verify.dry_run(r["token"], int(watch["budget"]))
+                if not ok:
+                    continue
+                pl = plans.three(r, watch["available"], None)
+                sibs = siblings.siblings_of(r, rows, watch["budget"], fetch)
+                verified.append({
+                    "pool": r, "plans": pl, "siblings": sibs,
+                    "advice": advice.build(r, pl, sibs, pl[1]["budget"]),
+                    "decision": decide.build(r, pl[1]["budget"], pl),
+                })
+            hits = notify.opportunities(verified)
+            n_alert += len(hits)
+            watch["alerts"] += n_alert
+
+            best = max((v["decision"]["score"] for v in verified), default=0)
+            watch["last_note"] = (f"发现 {len(hits)} 个机会" if hits
+                                  else f"无达标机会（最高 {best}/14，需 12）")
+            if n_alert and not hits:
+                watch["last_note"] = f"发出 {n_alert} 条持仓预警"
+        except Exception as e:
+            watch["last_note"] = f"本轮失败：{str(e)[:60]}"
+
+        watch["next_run"] = int(time.time()) + watch["interval"]
+        if stop.wait(watch["interval"]):
+            return
 
 
 def say(msg):
@@ -118,6 +235,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
+        # 状态接口每 20 秒轮询一次，任何一层缓存都会让页面显示陈旧的轮数和时间
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 
@@ -157,6 +276,37 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=do_scan, args=(budget, available, vt), daemon=True).start()
             return self._send(200, json.dumps({"ok": True}))
 
+        if u.path == "/api/watch":
+            act = q.get("on", ["status"])[0]
+            if act == "test":
+                threading.Thread(target=notify.test, daemon=True).start()
+                return self._send(200, json.dumps({"ok": True}))
+            if act == "1" and not watch["on"]:
+                watch["budget"] = float(q.get("budget", [watch["budget"]])[0])
+                watch["available"] = float(q.get("available", [watch["available"]])[0])
+                watch["interval"] = max(60, int(q.get("interval", [watch["interval"]])[0]))
+                _start_watch()
+            elif act == "0" and watch["on"]:
+                _stop_watch()
+            return self._send(200, json.dumps({
+                "on": watch["on"], "interval": watch["interval"],
+                "budget": watch["budget"], "available": watch["available"],
+                "rounds": watch["rounds"], "alerts": watch["alerts"],
+                "lastRun": watch["last_run"], "nextRun": watch["next_run"],
+                "note": watch["last_note"],
+                # 活着的监控循环数，正常永远是 0 或 1。大于 1 就是有循环没停干净
+                "loops": sum(1 for t in threading.enumerate() if t.name.startswith("watch-")),
+                "threads": threading.active_count(),
+            }, ensure_ascii=False))
+
+        if u.path == "/api/alerts":
+            try:
+                with open(notify.ALERT_LOG, encoding="utf-8") as f:
+                    lines = f.read().splitlines()
+            except OSError:
+                lines = []
+            return self._send(200, json.dumps({"lines": [l for l in lines if l][-40:][::-1]}, ensure_ascii=False))
+
         if u.path == "/api/history":
             snaps = history.load_history()
             stat = history.stability(snaps)
@@ -171,8 +321,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    _load_watch_state()
+    resumed = watch["on"]
+    if resumed:
+        # 上次关服务前监控是开着的，自动续上
+        _start_watch()
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"扫描器界面: http://127.0.0.1:{PORT}")
+    print(f"扫描器界面: http://127.0.0.1:{PORT}" + ("  （监控已自动恢复）" if resumed else ""))
     srv.serve_forever()
 
 

@@ -8,7 +8,18 @@ import time
 import config
 
 
+_last_append = 0.0
+MIN_GAP_SEC = 60
+
+
+# 同一分钟内只落一条。监控循环和手动扫描可能几乎同时完成，两条同一时刻的快照
+# 会让上榜率把那一刻算两次；快速"停→开"时新旧两轮并发也会撞在同一秒
 def append_snapshot(passed, budget):
+    global _last_append
+    now_ts = time.time()
+    if now_ts - _last_append < MIN_GAP_SEC:
+        return
+    _last_append = now_ts
     line = {
         "ts": int(time.time()),
         "budget": budget,

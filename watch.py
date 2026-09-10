@@ -14,10 +14,8 @@
 #   python watch.py --once              # 只跑一轮
 
 import argparse
-import json
 import sys
 import time
-import urllib.request
 
 import config
 import fetch
@@ -33,22 +31,10 @@ if hasattr(sys.stdout, "reconfigure"):
 
 INTERVAL = 15 * 60
 VERIFY_TOP = 3
-RH_UNI_API = "http://127.0.0.1:3000/api/positions"
 
 
 def log(*a):
     print(time.strftime("%H:%M:%S"), *a, flush=True)
-
-
-# 从 rh-uni 读当前持仓的代币地址，用来做持仓预警
-def held_tokens():
-    try:
-        req = urllib.request.Request(RH_UNI_API, headers={"User-Agent": "lp-scanner/1.0"})
-        with urllib.request.urlopen(req, timeout=30) as r:
-            d = json.loads(r.read().decode("utf-8"))
-        return {str(p.get("token", "")).lower() for p in (d.get("positions") or [])}
-    except Exception:
-        return set()
 
 
 def one_round(budget, available, do_verify):
@@ -62,15 +48,15 @@ def one_round(budget, available, do_verify):
     passed = history.merge(passed, history.stability(snaps))
     log(f"通过筛选 {len(passed)} 个")
 
-    # 持仓预警优先：钱已经在里面了，比找新机会重要
-    held = held_tokens()
+    # 持仓预警优先：钱已经在里面了，比找新机会重要。按池子匹配，不按代币
+    held = notify.held_pools()
     if held:
-        mine = [r for r in passed + rejected if r["token"].lower() in held]
+        mine = [r for r in passed + rejected if r["pool_addr"].lower() in held]
         warned = notify.warnings(mine)
         if warned:
             log(f"⚠ 持仓预警: {', '.join(warned)}")
         else:
-            log(f"持仓 {len(held)} 个代币，无预警")
+            log(f"持仓 {len(held)} 个池，无预警")
 
     if not do_verify or not passed:
         return

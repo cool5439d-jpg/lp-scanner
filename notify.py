@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import time
+import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SEEN_FILE = os.path.join(HERE, "notified.json")
@@ -132,6 +133,23 @@ def warnings(pools, min_signals=2):
 
     _save_seen(seen)
     return sent
+
+
+# 从 rh-uni 读当前持仓所在的池子 id，用来做持仓预警。读不到就返回空集合，
+# 上层据此跳过预警，不会因为 rh-uni 没开就报错。
+# 按池匹配而不是按代币：同一个代币常有好几个费率的池，你只持有其中一个，
+# 其它池的撤退信号和你无关。rh-uni 的仓位里带 poolId，和扫描行的 pool_addr 同源可直接比对。
+RH_UNI_API = "http://127.0.0.1:3000/api/positions"
+
+
+def held_pools():
+    try:
+        req = urllib.request.Request(RH_UNI_API, headers={"User-Agent": "lp-scanner/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            d = json.loads(r.read().decode("utf-8"))
+        return {str(p.get("poolId", "")).lower() for p in (d.get("positions") or []) if p.get("poolId")}
+    except Exception:
+        return set()
 
 
 def test():
