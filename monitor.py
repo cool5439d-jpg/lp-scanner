@@ -31,6 +31,7 @@ RH_UNI_POSITIONS = "http://127.0.0.1:3000/api/positions"
 state = {
     "on": False,
     "interval": 60,
+    "auto_sync": True,
     "rounds": 0,
     "last_run": 0,
     "next_run": 0,
@@ -39,6 +40,9 @@ state = {
 }
 # token -> {"token", "symbol", "pool": 指定池地址或"", "added": ts, "latest": 最新样本, "series": [...], "error": ""}
 entries = {}
+# 用户从名单里手动移出过的持仓代币。自动同步不再把它们加回来，否则"移出"这个按钮就形同虚设；
+# 该币在 rh-uni 里的仓位全部关掉后清除记录，下次再开仓又会自动进来
+muted = set()
 _lock = threading.Lock()
 _stop = threading.Event()
 
@@ -47,7 +51,7 @@ def _save():
     try:
         with _lock:
             data = {
-                "on": state["on"], "interval": state["interval"],
+                "on": state["on"], "interval": state["interval"], "auto_sync": state["auto_sync"], "muted": sorted(muted),
                 "entries": [{k: e[k] for k in ("token", "symbol", "pool", "added")} | {"series": e["series"][-KEEP:], "latest": e["latest"]}
                             for e in entries.values()],
             }
@@ -65,6 +69,8 @@ def load():
         return
     state["on"] = bool(d.get("on"))
     state["interval"] = int(d.get("interval", 60))
+    state["auto_sync"] = bool(d.get("auto_sync", True))
+    muted.update(d.get("muted", []))
     for e in d.get("entries", []):
         entries[e["token"]] = {"token": e["token"], "symbol": e.get("symbol", ""), "pool": e.get("pool", ""),
                                "added": e.get("added", 0), "latest": e.get("latest"), "series": e.get("series", []), "error": ""}
@@ -84,8 +90,12 @@ def add(token, symbol="", pool=""):
 
 
 def remove(token):
+    token = token.lower()
     with _lock:
-        gone = entries.pop(token.lower(), None) is not None
+        gone = entries.pop(token, None) is not None
+        # 手动移出的记下来，自动同步不再加回；只有它当前确实是持仓币才需要记
+        if gone and token in positions():
+            muted.add(token)
     _save()
     return gone
 
@@ -106,13 +116,23 @@ def positions():
     return out
 
 
-# 把钱包里已开仓的币全部加进名单，池子用仓位所在的那个
-def import_positions():
+# 把钱包里已开仓的币加进名单，池子用仓位所在的那个。pos 不传就现读 rh-uni。
+# 手动点按钮时 force=True 连被移出过的也加回来（用户明确要了）；每轮自动同步时跳过 muted
+def import_positions(pos=None, force=True):
+    pos = positions() if pos is None else pos
     added = []
-    for t, ps in positions().items():
+    # 仓位已关的币解除屏蔽。pos 为空多半是 rh-uni 没在跑，不是仓位真的全关了，这时别动
+    if pos:
+        with _lock:
+            muted.difference_update([t for t in muted if t not in pos])
+    for t, ps in pos.items():
+        if not force and t in muted:
+            continue
         pool = str(ps[0].get("poolId", "")).lower()
         if add(t, str(ps[0].get("symbol", "")), pool):
             added.append(ps[0].get("symbol") or t)
+        if force:
+            muted.discard(t)
     return added
 
 
@@ -152,6 +172,8 @@ def _pos(p):
 
 def _round(stop):
     pos = positions()
+    # 每轮先和 rh-uni 对一次：新开的仓位自动进名单，不用再手动点导入
+    synced = import_positions(pos, force=False) if state["auto_sync"] and pos else []
     with _lock:
         todo = list(entries.values())
     n_alert = 0
@@ -174,7 +196,7 @@ def _round(stop):
                 e["error"] = f"{time.strftime('%H:%M:%S')} {str(ex)[:80]}"
         if i < len(todo) - 1:
             time.sleep(GAP_SEC)
-    return n_alert
+    return n_alert, synced
 
 
 # 仓位跳出区间也要提醒：rh-uni 的监控会自动撤，但你得知道它撤了或者快撤了
@@ -200,13 +222,16 @@ def _loop(stop):
     while not stop.is_set():
         state["last_run"] = int(time.time())
         state["rounds"] += 1
-        n = _round(stop)
-        if stop.is_set():
+        out = _round(stop)
+        if stop.is_set() or out is None:
             return
+        n, synced = out
         with _lock:
             errs = sum(1 for e in entries.values() if e["error"])
             total = len(entries)
         state["last_note"] = f"{total} 个币，{errs} 个抓取失败" if errs else f"{total} 个币正常"
+        if synced:
+            state["last_note"] += f"，自动加入持仓 {'、'.join(synced)}"
         if n:
             state["last_note"] += f"，发出 {n} 条预警"
         _save()
@@ -236,7 +261,7 @@ def snapshot():
     with _lock:
         items = [dict(e, series=e["series"][-KEEP:]) for e in entries.values()]
     return {
-        "on": state["on"], "interval": state["interval"], "rounds": state["rounds"],
+        "on": state["on"], "interval": state["interval"], "autoSync": state["auto_sync"], "muted": sorted(muted), "rounds": state["rounds"],
         "lastRun": state["last_run"], "nextRun": state["next_run"], "note": state["last_note"],
         "loops": sum(1 for t in threading.enumerate() if t.name.startswith("monitor-")),
         "entries": sorted(items, key=lambda e: e["added"]),

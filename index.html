@@ -60,6 +60,10 @@ tr.clickable:hover td { background: #1d222c; }
 .shared .kv span { color: var(--dim); }
 .addr { font-family: Consolas, monospace; font-size: 12px; color: var(--dim); cursor: pointer; }
 .addr:hover { color: var(--accent); }
+a.ext { display: inline-block; padding: 0 7px; margin-left: 4px; border: 1px solid var(--line); border-radius: 4px;
+  font-size: 11px; line-height: 18px; color: var(--dim); text-decoration: none; vertical-align: middle; }
+a.ext:hover { color: var(--accent); border-color: var(--accent); }
+.mhead a.ext { margin-left: 0; }
 .alert { background: rgba(224,166,58,.1); border-left: 3px solid var(--warn);
   padding: 10px 12px; border-radius: 4px; margin-top: 12px; font-size: 13px; }
 .empty { color: var(--dim); text-align: center; padding: 30px; }
@@ -192,9 +196,10 @@ tr.clickable:hover td { background: #1d222c; }
       </div>
       <button id="madd" class="ghost">加入</button>
       <button id="mimport" class="ghost">导入 rh-uni 持仓</button>
+      <label class="hint" style="margin:0 0 8px"><input id="msync" type="checkbox" checked> 每轮自动同步持仓</label>
       <span id="mstate" class="hint" style="margin:0"></span>
     </div>
-    <div class="hint">每隔几十秒读一次名单上每个币的池子，把价格、资金流、阶段、撤退信号连成线。持仓的币会显示区间位置和盈亏。撤退信号到两个、或仓位跳出区间会弹窗。</div>
+    <div class="hint">每隔几十秒读一次名单上每个币的池子，把价格、资金流、阶段、撤退信号连成线。持仓的币会显示区间位置和盈亏。撤退信号到两个、或仓位跳出区间会弹窗。开着自动同步时，在 rh-uni 新开的仓位下一轮自动进名单；手动移出的持仓币不会被加回，除非点「导入」。</div>
     <div id="mout"></div>
   </div>
 

@@ -7,6 +7,12 @@ const cls = (x) => (x > 1 ? 'pos' : x < -1 ? 'neg' : 'mid')
 
 let timer = null
 
+// 外站跳转：GMGN 交易页（链名用 robinhood，2026-07 起支持）和 GeckoTerminal 池页
+const gmgnUrl = (token) => `https://gmgn.ai/robinhood/token/${token}`
+const geckoUrl = (pool) => `https://www.geckoterminal.com/robinhood/pools/${pool}`
+const links = (token, pool) => `<a class="ext" href="${gmgnUrl(token)}" target="_blank" rel="noopener">GMGN</a>` +
+  (pool ? ` <a class="ext" href="${geckoUrl(pool)}" target="_blank" rel="noopener">Gecko</a>` : '')
+
 const setLog = (lines, running) => {
   $('logCard').style.display = 'block'
   $('log').innerHTML = lines.map((l, i) =>
@@ -64,7 +70,7 @@ const poolBlock = (v) => {
       · 流动性 ${money(r.tvl)} · 笔数 ${r.trades_24h}</div>
     <div class="hint">合约 ${r.sec_level || '?'}：${r.sec_note || ''}</div>
     ${phaseBlock(r)}
-    <div class="hint">代币地址 <span class="addr" onclick="copy('${r.token}')">${r.token}（点击复制）</span></div>
+    <div class="hint">代币地址 <span class="addr" onclick="copy('${r.token}')">${r.token}（点击复制）</span> ${links(r.token, r.pool_addr)}</div>
     ${decisionBlock(v.decision)}
     <div class="plans">${ps.map((p, i) => planCard(p, i === 1)).join('')}</div>
     <div class="shared">
@@ -158,7 +164,7 @@ const adviceBlock = (a) => {
 
 const rankTable = (rows) => {
   const tr = rows.slice(0, 14).map((r) => `<tr>
-    <td>${r.name}</td>
+    <td>${r.name} ${links(r.token, r.pool_addr)}</td>
     <td>${money(r.tvl)}</td>
     <td>${r.turnover.toFixed(1)}</td>
     <td>${r.trades_24h}</td>
@@ -239,7 +245,7 @@ let lastLookup = null
 const lookupTable = (pools) => {
   if (!pools.length) return ''
   const tr = pools.map((r) => `<tr>
-    <td>${r.name}${r.status === '通过' ? '<span class="tag ok">通过</span>' : '<span class="tag no">淘汰</span>'}</td>
+    <td>${r.name}${r.status === '通过' ? '<span class="tag ok">通过</span>' : '<span class="tag no">淘汰</span>'} ${links(r.token, r.pool_addr)}</td>
     <td>${money(r.tvl)}</td><td>${r.turnover.toFixed(1)}</td><td>${r.trades_24h}</td>
     <td class="${cls(r.chg_24h)}">${pct(r.chg_24h)}</td><td>${r.durability.toFixed(0)}%</td>
     <td>$${r.daily_income.toFixed(2)}</td>
@@ -256,7 +262,7 @@ const renderLookup = (d) => {
     html += `<div class="hint" style="margin-top:10px">同名候选（按最大池流动性排序）：</div>` +
       d.candidates.slice(0, 8).map((c) => `<span class="cand" onclick="lookupToken('${c.token}')">${c.symbol} · ${money(c.tvl)} · ${c.pools} 池 · ${c.token.slice(0, 8)}…</span>`).join('')
   }
-  if (d.token) html += `<div class="hint" style="margin-top:10px">${d.symbol || ''} 代币地址 <span class="addr" onclick="copy('${d.token}')">${d.token}（点击复制）</span></div>`
+  if (d.token) html += `<div class="hint" style="margin-top:10px">${d.symbol || ''} 代币地址 <span class="addr" onclick="copy('${d.token}')">${d.token}（点击复制）</span> ${links(d.token, '')}</div>`
   html += lookupTable(d.pools || [])
   if (d.blocks && d.blocks.length) html += d.blocks.map(poolBlock).join('')
   $('lout').innerHTML = html
@@ -334,14 +340,14 @@ const rangeBar = (p) => {
 const monCard = (e, i) => {
   const s = e.latest
   const sym = e.symbol || e.token.slice(0, 10)
-  if (!s) return `<div class="mcard"><div class="mhead"><b>${sym}</b><span class="hint" style="margin:0">等待第一轮</span><span class="x" onclick="monRemove('${e.token}')">✕</span></div>${e.error ? `<div class="merr">${e.error}</div>` : ''}</div>`
+  if (!s) return `<div class="mcard"><div class="mhead"><b>${sym}</b><span class="hint" style="margin:0">等待第一轮</span>${links(e.token, e.pool)}<span class="x" onclick="monRemove('${e.token}')">✕</span></div>${e.error ? `<div class="merr">${e.error}</div>` : ''}</div>`
   const n = s.signals.length
   const lvl = n >= 3 ? 'bad' : n >= 2 ? 'warn' : ''
   const age = Math.round((Date.now() / 1000 - s.ts) / 60)
   return `<div class="mcard ${lvl}">
     <div class="mhead"><b>${sym}</b><span class="px">${fmtPx(s.price)}</span>
       <span class="${cls(s.chg_5m)}" style="font-size:12.5px">5m ${pct(s.chg_5m)}</span>
-      <span class="hint" style="margin:0">${age} 分前</span><span class="x" title="移出监测" onclick="monRemove('${e.token}')">✕</span></div>
+      <span class="hint" style="margin:0">${age} 分前</span>${links(e.token, s.pool_addr)}<span class="x" title="移出监测" onclick="monRemove('${e.token}')">✕</span></div>
     <div class="mline"><span>1h <b class="${cls(s.chg_1h)}">${pct(s.chg_1h)}</b></span><span>6h <b class="${cls(s.chg_6h)}">${pct(s.chg_6h)}</b></span><span>24h <b class="${cls(s.chg_24h)}">${pct(s.chg_24h)}</b></span>
       <span>换手 <b>${s.turnover.toFixed(1)}</b></span><span>流动性 <b>${money(s.tvl)}</b></span><span>5m 成交 <b>${money(s.vol_5m)}</b></span></div>
     <div style="margin-top:6px"><span class="ptag ${PH[s.phase] || 'dim'}">${s.phase}期</span><span class="ptag ${FLOWC[s.flow] || 'dim'}">资金${s.flow}${s.flow_ratio != null ? ' ' + s.flow_ratio + '×' : ''}</span><span style="font-size:12.5px;color:var(--dim)">${s.phase_play}</span></div>
@@ -358,6 +364,7 @@ const renderMonitor = (m) => {
   $('mtoggle').textContent = m.on ? '停止监测' : '开启监测'
   $('mtoggle').className = m.on ? 'ghost' : ''
   if (document.activeElement !== $('minterval')) $('minterval').value = m.interval
+  $('msync').checked = !!m.autoSync
   $('mstate').innerHTML = m.on
     ? `${dot}运行中 · ${m.entries.length} 个币 · 已跑 ${m.rounds} 轮 · 上次 ${fmtTime(m.lastRun)} · 下次 ${fmtTime(m.nextRun)} · ${m.note}`
     : `${dot}已停止 · ${m.entries.length} 个币在名单里`
@@ -386,6 +393,7 @@ $('madd').onclick = async () => {
   renderMonitor(r)
 }
 $('mimport').onclick = async () => renderMonitor(await (await fetch('/api/monitor?act=import')).json())
+$('msync').onchange = async () => renderMonitor(await (await fetch(`/api/monitor?act=autosync&on=${$('msync').checked ? 1 : 0}`)).json())
 
 pollMonitor()
 setInterval(pollMonitor, 15000)

@@ -383,6 +383,9 @@ class Handler(BaseHTTPRequestHandler):
             elif act == "interval":
                 monitor.state["interval"] = max(30, int(q.get("interval", [monitor.state["interval"]])[0]))
                 monitor._save()
+            elif act == "autosync":
+                monitor.state["auto_sync"] = q.get("on", ["1"])[0] == "1"
+                monitor._save()
             return self._send(200, json.dumps(monitor.snapshot(), ensure_ascii=False, default=str))
 
         if u.path == "/api/alerts":
