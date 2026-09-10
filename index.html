@@ -96,6 +96,28 @@ tr.clickable:hover td { background: #1d222c; }
 .detail { display: none; }
 .detail.open { display: table-row; }
 .detail td { background: #12151b; padding: 16px; }
+
+.mon { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; margin-top: 14px; }
+.mcard { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: #12151b; }
+.mcard.warn { border-color: var(--warn); }
+.mcard.bad { border-color: var(--bad); }
+.mhead { display: flex; align-items: baseline; gap: 10px; }
+.mhead b { font-size: 16px; }
+.mhead .px { font-family: Consolas, monospace; font-size: 15px; }
+.mhead .x { margin-left: auto; color: var(--dim); cursor: pointer; font-size: 16px; }
+.mhead .x:hover { color: var(--bad); }
+.mline { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12.5px; color: var(--dim); margin-top: 4px; }
+.mline b { color: var(--fg); font-weight: 500; }
+.spark { display: block; width: 100%; height: 56px; margin-top: 8px; }
+.rng { position: relative; height: 8px; background: #22262f; border-radius: 4px; margin: 8px 0 4px; }
+.rng .band { position: absolute; top: 0; bottom: 0; background: rgba(53,192,127,.35); border-radius: 4px; }
+.rng .now { position: absolute; top: -3px; width: 3px; height: 14px; background: var(--fg); border-radius: 2px; }
+.rng .now.out { background: var(--bad); }
+.msig { margin-top: 8px; font-size: 12.5px; color: var(--warn); }
+.msig.bad { color: var(--bad); }
+.merr { margin-top: 6px; font-size: 12px; color: var(--bad); }
+.cand { display: inline-block; margin: 4px 8px 0 0; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 13px; }
+.cand:hover { border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -138,6 +160,42 @@ tr.clickable:hover td { background: #1d222c; }
       <button id="wtest" class="ghost">测试通知</button>
     </div>
     <div class="hint">开启后每隔一段时间自动扫描，发现达标机会或持仓预警就弹窗加提示音。关掉浏览器不影响，服务在跑就一直监控。</div>
+  </div>
+
+  <div class="card">
+    <h2>单币查询</h2>
+    <div class="row">
+      <div class="field">
+        <label>代币地址或符号</label>
+        <input id="lq" type="text" placeholder="0x… 或 JUGGERNAUT" style="width:420px">
+      </div>
+      <label class="hint" style="margin:0 0 8px"><input id="lverify" type="checkbox"> 跑演练终审（约 15 秒/池）</label>
+      <button id="lgo">查询</button>
+      <button id="ladd" class="ghost" style="display:none">加入监测器</button>
+    </div>
+    <div class="hint">把这个币在本链 Uniswap v4 上全部 USDG 池按扫描器同一套标准过一遍，冷门币和刚建池的币也能查。预算和可用资金沿用上面的填法。</div>
+    <div class="log" id="llog" style="display:none;margin-top:10px"></div>
+    <div id="lout"></div>
+  </div>
+
+  <div class="card">
+    <h2>代币监测器</h2>
+    <div class="row">
+      <button id="mtoggle">开启监测</button>
+      <div class="field">
+        <label>间隔（秒）</label>
+        <input id="minterval" type="number" value="60" style="width:100px">
+      </div>
+      <div class="field">
+        <label>加代币（地址）</label>
+        <input id="maddr" type="text" placeholder="0x…" style="width:380px">
+      </div>
+      <button id="madd" class="ghost">加入</button>
+      <button id="mimport" class="ghost">导入 rh-uni 持仓</button>
+      <span id="mstate" class="hint" style="margin:0"></span>
+    </div>
+    <div class="hint">每隔几十秒读一次名单上每个币的池子，把价格、资金流、阶段、撤退信号连成线。持仓的币会显示区间位置和盈亏。撤退信号到两个、或仓位跳出区间会弹窗。</div>
+    <div id="mout"></div>
   </div>
 
   <div class="card" id="logCard" style="display:none">

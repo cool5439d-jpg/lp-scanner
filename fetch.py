@@ -4,6 +4,7 @@ import json
 import re
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import config
@@ -85,6 +86,8 @@ def extract(raw_pools, budget):
         base, quote = _addr("base_token"), _addr("quote_token")
         usdg = config.USDG_ADDRESS
         token = quote if base == usdg else base
+        # 代币美元价：Gecko 分别给 base/quote 两侧的价格，取非 USDG 那一侧
+        price = _f(a.get("quote_token_price_usd") if base == usdg else a.get("base_token_price_usd"))
 
         tvl = _f(a.get("reserve_in_usd"))
         m5 = _f(vol.get("m5"))
@@ -107,6 +110,7 @@ def extract(raw_pools, budget):
             "name": name,
             "token": token,
             "pool_addr": (a.get("address") or "").lower(),
+            "price": price,
             "fee_pct": fee * 100,
             "tvl": tvl,
             "vol_5m": m5,
@@ -134,3 +138,33 @@ def fetch_token_pools(token, budget):
     except Exception:
         return []
     return extract(data, budget)
+
+
+# 同上，但抓取失败直接抛错。监测器要区分"这个币没有池"和"接口挂了"，
+# 后者不能把已有的读数清零
+def fetch_token_pools_strict(token, budget):
+    url = f"{API}/networks/{config.NETWORK}/tokens/{token}/pools?page=1"
+    return extract(_get(url).get("data", []), budget)
+
+
+# 按符号或名字搜代币。Gecko 的搜索接口返回的是池子，从池子两侧把非 USDG 的代币收集起来，
+# 同一个代币按其最大池的流动性排序，只保留本链 Uniswap v4 的
+def search_tokens(query):
+    url = f"{API}/search/pools?query={urllib.parse.quote(query)}&network={config.NETWORK}&page=1"
+    found = {}
+    for p in _get(url).get("data", []):
+        a = p.get("attributes") or {}
+        rel = p.get("relationships") or {}
+        if ((rel.get("dex") or {}).get("data") or {}).get("id", "") != config.DEX_ID:
+            continue
+        name = a.get("name") or ""
+        parts = [s.strip() for s in re.sub(r"\s[0-9.]+%$", "", name).split("/")]
+        for side, sym in zip(("base_token", "quote_token"), parts):
+            addr = ((rel.get(side) or {}).get("data") or {}).get("id", "").split("_")[-1].lower()
+            if not addr or addr == config.USDG_ADDRESS:
+                continue
+            tvl = _f(a.get("reserve_in_usd"))
+            e = found.setdefault(addr, {"token": addr, "symbol": sym, "tvl": 0.0, "pools": 0})
+            e["pools"] += 1
+            e["tvl"] = max(e["tvl"], tvl)
+    return sorted(found.values(), key=lambda x: -x["tvl"])

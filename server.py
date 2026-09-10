@@ -17,6 +17,8 @@ import decide
 import fetch
 import history
 import judge
+import lookup
+import monitor
 import notify
 import plans
 import siblings
@@ -160,6 +162,44 @@ def say(msg):
         state["phase"] = msg
 
 
+# 单币查询的任务状态，和全量扫描互不干扰，可以同时跑
+look = {"running": False, "log": [], "result": None, "query": ""}
+
+
+def look_say(msg):
+    with lock:
+        look["log"].append(f"{time.strftime('%H:%M:%S')} {msg}")
+        look["log"] = look["log"][-40:]
+
+
+def do_lookup(query, budget, available, do_verify):
+    try:
+        look["running"] = True
+        look["result"] = None
+        look["log"] = []
+        look["query"] = query
+        look_say(f"解析 {query}…")
+        token, cands = lookup.resolve(query)
+        if not token:
+            with lock:
+                look["result"] = {"query": query, "candidates": cands, "pools": [], "blocks": [],
+                                  "note": "找到多个同名代币，点一个继续" if cands else "没搜到这个符号，试试直接填合约地址"}
+            return
+        res = lookup.evaluate(token, budget, available, do_verify, look_say)
+        res["query"] = query
+        res["candidates"] = cands
+        res["budget"] = budget
+        with lock:
+            look["result"] = res
+        look_say("完成")
+    except Exception as e:
+        look_say(f"失败：{e}")
+        with lock:
+            look["result"] = {"query": query, "candidates": [], "pools": [], "blocks": [], "note": f"查询失败：{str(e)[:120]}"}
+    finally:
+        look["running"] = False
+
+
 def do_scan(budget, available, verify_top):
     try:
         state["running"] = True
@@ -299,6 +339,52 @@ class Handler(BaseHTTPRequestHandler):
                 "threads": threading.active_count(),
             }, ensure_ascii=False))
 
+        if u.path == "/api/lookup":
+            q = q.get("q", [""])[0].strip()
+            if not q:
+                return self._send(200, json.dumps({"ok": False, "err": "请填代币地址或符号"}, ensure_ascii=False))
+            if look["running"]:
+                return self._send(200, json.dumps({"ok": False, "err": "上一个查询还没完"}, ensure_ascii=False))
+            qs = parse_qs(u.query)
+            budget = float(qs.get("budget", [config.DEFAULT_BUDGET])[0])
+            available = float(qs.get("available", [budget])[0])
+            do_verify = qs.get("verify", ["0"])[0] == "1"
+            threading.Thread(target=do_lookup, args=(q, budget, available, do_verify), daemon=True).start()
+            return self._send(200, json.dumps({"ok": True}))
+
+        if u.path == "/api/lookup_status":
+            with lock:
+                return self._send(200, json.dumps({
+                    "running": look["running"], "log": look["log"][-20:], "query": look["query"],
+                    "result": look["result"],
+                }, ensure_ascii=False, default=str))
+
+        if u.path == "/api/monitor":
+            act = q.get("act", ["status"])[0]
+            if act == "add":
+                token = q.get("token", [""])[0].strip().lower()
+                if not lookup.ADDR_RE.match(token):
+                    return self._send(200, json.dumps({"ok": False, "err": "代币地址不合法"}, ensure_ascii=False))
+                monitor.add(token, q.get("symbol", [""])[0], q.get("pool", [""])[0])
+                if not monitor.state["on"]:
+                    monitor.start()
+            elif act == "remove":
+                monitor.remove(q.get("token", [""])[0])
+            elif act == "import":
+                added = monitor.import_positions()
+                if added and not monitor.state["on"]:
+                    monitor.start()
+                monitor.state["last_note"] = f"导入了 {len(added)} 个持仓代币" if added else "rh-uni 没有仓位，或它没在跑"
+            elif act == "on" and not monitor.state["on"]:
+                monitor.state["interval"] = max(30, int(q.get("interval", [monitor.state["interval"]])[0]))
+                monitor.start()
+            elif act == "off" and monitor.state["on"]:
+                monitor.stop()
+            elif act == "interval":
+                monitor.state["interval"] = max(30, int(q.get("interval", [monitor.state["interval"]])[0]))
+                monitor._save()
+            return self._send(200, json.dumps(monitor.snapshot(), ensure_ascii=False, default=str))
+
         if u.path == "/api/alerts":
             try:
                 with open(notify.ALERT_LOG, encoding="utf-8") as f:
@@ -326,8 +412,12 @@ def main():
     if resumed:
         # 上次关服务前监控是开着的，自动续上
         _start_watch()
+    monitor.load()
+    if monitor.state["on"]:
+        monitor.start()
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"扫描器界面: http://127.0.0.1:{PORT}" + ("  （监控已自动恢复）" if resumed else ""))
+    print(f"扫描器界面: http://127.0.0.1:{PORT}" + ("  （监控已自动恢复）" if resumed else "")
+          + (f"  （监测器 {len(monitor.entries)} 个币已恢复）" if monitor.state["on"] else ""))
     srv.serve_forever()
 
 

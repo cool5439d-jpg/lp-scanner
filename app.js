@@ -232,6 +232,164 @@ setInterval(pollWatch, 20000)
 
 window.copy = (t) => navigator.clipboard.writeText(t)
 
+// ---- 单币查询 ----
+let ltimer = null
+let lastLookup = null
+
+const lookupTable = (pools) => {
+  if (!pools.length) return ''
+  const tr = pools.map((r) => `<tr>
+    <td>${r.name}${r.status === '通过' ? '<span class="tag ok">通过</span>' : '<span class="tag no">淘汰</span>'}</td>
+    <td>${money(r.tvl)}</td><td>${r.turnover.toFixed(1)}</td><td>${r.trades_24h}</td>
+    <td class="${cls(r.chg_24h)}">${pct(r.chg_24h)}</td><td>${r.durability.toFixed(0)}%</td>
+    <td>$${r.daily_income.toFixed(2)}</td>
+    <td style="text-align:left;color:var(--dim);white-space:normal">${r.status === '通过' ? `${r.phase || ''}期 · 资金${r.flow_level || ''}` : (r.reasons || []).join('；')}</td></tr>`).join('')
+  return `<table style="margin-top:12px"><thead><tr><th>池子</th><th>流动性</th><th>日换手</th><th>笔数</th><th>24h</th><th>持久度</th><th>日入</th><th style="text-align:left">结论</th></tr></thead><tbody>${tr}</tbody></table>`
+}
+
+const renderLookup = (d) => {
+  lastLookup = d
+  $('ladd').style.display = d.token ? '' : 'none'
+  let html = ''
+  if (d.note) html += `<div class="alert">${d.note}</div>`
+  if (d.candidates && d.candidates.length > 1) {
+    html += `<div class="hint" style="margin-top:10px">同名候选（按最大池流动性排序）：</div>` +
+      d.candidates.slice(0, 8).map((c) => `<span class="cand" onclick="lookupToken('${c.token}')">${c.symbol} · ${money(c.tvl)} · ${c.pools} 池 · ${c.token.slice(0, 8)}…</span>`).join('')
+  }
+  if (d.token) html += `<div class="hint" style="margin-top:10px">${d.symbol || ''} 代币地址 <span class="addr" onclick="copy('${d.token}')">${d.token}（点击复制）</span></div>`
+  html += lookupTable(d.pools || [])
+  if (d.blocks && d.blocks.length) html += d.blocks.map(poolBlock).join('')
+  $('lout').innerHTML = html
+}
+
+const pollLookup = async () => {
+  const s = await (await fetch('/api/lookup_status')).json()
+  $('llog').style.display = 'block'
+  $('llog').innerHTML = s.log.join('\n')
+  $('llog').scrollTop = $('llog').scrollHeight
+  if (s.running) return
+  clearInterval(ltimer); ltimer = null
+  $('lgo').disabled = false
+  $('lgo').textContent = '查询'
+  if (s.result) renderLookup(s.result)
+}
+
+window.lookupToken = async (q) => {
+  $('lq').value = q
+  const b = $('budget').value, a = $('available').value, v = $('lverify').checked ? 1 : 0
+  const r = await (await fetch(`/api/lookup?q=${encodeURIComponent(q)}&budget=${b}&available=${a}&verify=${v}`)).json()
+  if (!r.ok) return alert(r.err)
+  $('lgo').disabled = true
+  $('lgo').textContent = '查询中…'
+  $('lout').innerHTML = ''
+  $('ladd').style.display = 'none'
+  ltimer = setInterval(pollLookup, 1000)
+}
+
+$('lgo').onclick = () => lookupToken($('lq').value.trim())
+$('lq').onkeydown = (e) => { if (e.key === 'Enter') lookupToken($('lq').value.trim()) }
+$('ladd').onclick = async () => {
+  if (!lastLookup || !lastLookup.token) return
+  const best = (lastLookup.pools || []).find((p) => p.status === '通过') || (lastLookup.pools || [])[0]
+  await fetch(`/api/monitor?act=add&token=${lastLookup.token}&symbol=${encodeURIComponent(lastLookup.symbol || '')}&pool=${best ? best.pool_addr : ''}`)
+  pollMonitor()
+}
+
+// ---- 代币监测器 ----
+const fmtPx = (x) => x >= 1 ? x.toFixed(4) : x >= 0.01 ? x.toFixed(5) : x.toPrecision(4)
+const FLOWC = { '涌入': 'good', '正常': 'good', '退潮': 'warn', '枯竭': 'bad', '未知': 'dim' }
+
+const spark = (id, series) => {
+  const c = document.getElementById(id)
+  if (!c || series.length < 2) return
+  const w = c.width = c.clientWidth * 2, h = c.height = c.clientHeight * 2
+  const ctx = c.getContext('2d')
+  const px = series.map((s) => s.price)
+  const lo = Math.min(...px), hi = Math.max(...px), span = hi - lo || 1
+  const x = (i) => i / (series.length - 1) * (w - 4) + 2
+  const y = (p) => h - 4 - (p - lo) / span * (h - 8)
+  ctx.clearRect(0, 0, w, h)
+  ctx.lineWidth = 2
+  ctx.strokeStyle = px[px.length - 1] >= px[0] ? '#35c07f' : '#e05d5d'
+  ctx.beginPath()
+  series.forEach((s, i) => i ? ctx.lineTo(x(i), y(s.price)) : ctx.moveTo(x(i), y(s.price)))
+  ctx.stroke()
+  ctx.fillStyle = '#8b93a3'
+  ctx.font = '20px Consolas'
+  ctx.fillText(fmtPx(hi), 4, 20)
+  ctx.fillText(fmtPx(lo), 4, h - 6)
+}
+
+const rangeBar = (p) => {
+  const lo = p.lo, hi = p.hi, now = p.price
+  const span = (hi - lo) || 1
+  const pad = span * 0.5
+  const min = lo - pad, max = hi + pad
+  const pos = (v) => Math.max(0, Math.min(100, (v - min) / (max - min) * 100))
+  return `<div class="rng"><div class="band" style="left:${pos(lo)}%;width:${pos(hi) - pos(lo)}%"></div><div class="now ${p.in_range ? '' : 'out'}" style="left:${pos(now)}%"></div></div>
+    <div class="mline"><span>仓位 ${p.id} ${p.fee_text}</span><span>区间 ${fmtPx(lo)} ~ ${fmtPx(hi)}</span><span>${p.in_range ? '<b class="pos">在区间内</b>' : '<b class="neg">已出区间</b>'}</span>
+    <span>价值 <b>$${p.value.toFixed(0)}</b></span><span>手续费 <b class="pos">$${p.fees_usd.toFixed(2)}</b></span><span>盈亏 <b class="${p.pnl_usd >= 0 ? 'pos' : 'neg'}">$${p.pnl_usd.toFixed(2)}</b></span></div>`
+}
+
+const monCard = (e, i) => {
+  const s = e.latest
+  const sym = e.symbol || e.token.slice(0, 10)
+  if (!s) return `<div class="mcard"><div class="mhead"><b>${sym}</b><span class="hint" style="margin:0">等待第一轮</span><span class="x" onclick="monRemove('${e.token}')">✕</span></div>${e.error ? `<div class="merr">${e.error}</div>` : ''}</div>`
+  const n = s.signals.length
+  const lvl = n >= 3 ? 'bad' : n >= 2 ? 'warn' : ''
+  const age = Math.round((Date.now() / 1000 - s.ts) / 60)
+  return `<div class="mcard ${lvl}">
+    <div class="mhead"><b>${sym}</b><span class="px">${fmtPx(s.price)}</span>
+      <span class="${cls(s.chg_5m)}" style="font-size:12.5px">5m ${pct(s.chg_5m)}</span>
+      <span class="hint" style="margin:0">${age} 分前</span><span class="x" title="移出监测" onclick="monRemove('${e.token}')">✕</span></div>
+    <div class="mline"><span>1h <b class="${cls(s.chg_1h)}">${pct(s.chg_1h)}</b></span><span>6h <b class="${cls(s.chg_6h)}">${pct(s.chg_6h)}</b></span><span>24h <b class="${cls(s.chg_24h)}">${pct(s.chg_24h)}</b></span>
+      <span>换手 <b>${s.turnover.toFixed(1)}</b></span><span>流动性 <b>${money(s.tvl)}</b></span><span>5m 成交 <b>${money(s.vol_5m)}</b></span></div>
+    <div style="margin-top:6px"><span class="ptag ${PH[s.phase] || 'dim'}">${s.phase}期</span><span class="ptag ${FLOWC[s.flow] || 'dim'}">资金${s.flow}${s.flow_ratio != null ? ' ' + s.flow_ratio + '×' : ''}</span><span style="font-size:12.5px;color:var(--dim)">${s.phase_play}</span></div>
+    <canvas class="spark" id="sp${i}"></canvas>
+    <div class="hint" style="margin:0">${s.pool_name} · ${e.series.length} 个样本</div>
+    ${s.positions.map(rangeBar).join('')}
+    ${n ? `<div class="msig ${lvl}">撤退信号 ${n} 个：${s.signals.join('；')}</div>` : ''}
+    ${e.error ? `<div class="merr">最近一次抓取失败：${e.error}（沿用上次读数）</div>` : ''}
+  </div>`
+}
+
+const renderMonitor = (m) => {
+  const dot = `<span class="wdot ${m.on ? 'on' : 'off'}"></span>`
+  $('mtoggle').textContent = m.on ? '停止监测' : '开启监测'
+  $('mtoggle').className = m.on ? 'ghost' : ''
+  if (document.activeElement !== $('minterval')) $('minterval').value = m.interval
+  $('mstate').innerHTML = m.on
+    ? `${dot}运行中 · ${m.entries.length} 个币 · 已跑 ${m.rounds} 轮 · 上次 ${fmtTime(m.lastRun)} · 下次 ${fmtTime(m.nextRun)} · ${m.note}`
+    : `${dot}已停止 · ${m.entries.length} 个币在名单里`
+  $('mout').innerHTML = m.entries.length ? `<div class="mon">${m.entries.map(monCard).join('')}</div>` : '<div class="empty">名单为空。上面填地址加入，或点「导入 rh-uni 持仓」。</div>'
+  m.entries.forEach((e, i) => spark(`sp${i}`, e.series))
+}
+
+const pollMonitor = async () => renderMonitor(await (await fetch('/api/monitor')).json())
+
+window.monRemove = async (t) => {
+  if (!confirm('移出监测器？')) return
+  renderMonitor(await (await fetch(`/api/monitor?act=remove&token=${t}`)).json())
+}
+
+$('mtoggle').onclick = async () => {
+  const m = await (await fetch('/api/monitor')).json()
+  const iv = Math.max(30, Number($('minterval').value || 60))
+  renderMonitor(await (await fetch(`/api/monitor?act=${m.on ? 'off' : 'on'}&interval=${iv}`)).json())
+}
+$('minterval').onchange = async () => renderMonitor(await (await fetch(`/api/monitor?act=interval&interval=${Math.max(30, Number($('minterval').value || 60))}`)).json())
+$('madd').onclick = async () => {
+  const t = $('maddr').value.trim()
+  const r = await (await fetch(`/api/monitor?act=add&token=${t}`)).json()
+  if (r.ok === false) return alert(r.err)
+  $('maddr').value = ''
+  renderMonitor(r)
+}
+$('mimport').onclick = async () => renderMonitor(await (await fetch('/api/monitor?act=import')).json())
+
+pollMonitor()
+setInterval(pollMonitor, 15000)
+
 // 打开页面时若已有上次结果就直接显示
 ;(async () => {
   const s = await (await fetch('/api/status')).json()

@@ -9,6 +9,7 @@ report.txt
 alerts.log
 notified.json
 watch_state.json
+monitor.json
 
 # 万一有人在这里放配置
 .env
