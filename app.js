@@ -292,6 +292,22 @@ window.lookupToken = async (q) => {
   ltimer = setInterval(pollLookup, 1000)
 }
 
+// 每个带 data-fold 的板块标题右侧加一个收起键，状态按板块分别记在浏览器里，刷新后保持
+document.querySelectorAll('.card[data-fold]').forEach((card) => {
+  const key = 'fold:' + card.dataset.fold
+  const btn = document.createElement('button')
+  btn.className = 'fold'
+  btn.title = '收起 / 展开'
+  const apply = (folded) => {
+    card.classList.toggle('folded', folded)
+    btn.textContent = folded ? '展开' : '收起'
+    localStorage.setItem(key, folded ? '1' : '0')
+  }
+  btn.onclick = () => apply(!card.classList.contains('folded'))
+  card.querySelector('h2').appendChild(btn)
+  apply(localStorage.getItem(key) === '1')
+})
+
 $('lgo').onclick = () => lookupToken($('lq').value.trim())
 $('lq').onkeydown = (e) => { if (e.key === 'Enter') lookupToken($('lq').value.trim()) }
 $('ladd').onclick = async () => {
